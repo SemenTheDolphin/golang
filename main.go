@@ -20,127 +20,151 @@ type Answer struct {
 	Items []Item `json:"items"`
 }
 type Item struct {
-	CommentsCount int
+	Comments CommentsCount `json:"comments"`
 	Id int    `json:"id"`
 	FromId int    `json:"from_id"`
 	Text string `json:"text"`
 }
+type CommentsCount struct {
+	Count int `json:"count"`
+}
+var accessToken = os.Getenv("VK_TOKEN")
+var cURL = "https://api.vk.com/method/wall.getComments?v=5.68&count=100&access_token=" + accessToken
+var gURL = "https://api.vk.com/method/wall.get?v=5.68&access_token=" + accessToken
 
 //Printing and saving new last posts and comments
-func printNewPostsAndComments(accessToken string, groupUrl string, wall Resp) Resp {
-	fmt.Println("...")
-	newWall := getJson(groupUrl)
-	newWall = setCommentsCount(accessToken, newWall)
-	var j int
-	for j = 0; j < (newWall.Response.Count - wall.Response.Count); j++ {
-		printPostAndComments(accessToken, newWall, j, 0, false)
-	}
-	for i := j; i < len(wall.Response.Items)-j; i++ {
-		if newWall.Response.Items[i].CommentsCount > wall.Response.Items[i-j].CommentsCount {
-			printPostAndComments(accessToken, newWall, i, wall.Response.Items[i-j].CommentsCount, true)
-		}
-	}
-	return newWall
-}
-//Printing comments for i's post (if offset>0 - printing only new comments)
-func printComments(accessToken string, wall Resp, i int, count int, offset int) {
-	for j := 0; j < int(math.Ceil(float64(count-offset)/float64(100))); j++ {
-		commentsUrl := fmt.Sprintf("https://api.vk.com/method/wall.getComments?offset=%d&owner_id=%d&post_id=" +
-			"%d&sort=asc&count=10&v=5.68&access_token=%s",
-			j*100 + offset, wall.Response.Items[i].FromId, wall.Response.Items[i].Id,
-			accessToken)
-
-		comm := getJson(commentsUrl)
-		time.Sleep(time.Millisecond*500)
-		for k := 0; k < len(comm.Response.Items); k++ {
-			fmt.Printf("\n        [%d]: %s",
-				comm.Response.Items[k].Id, comm.Response.Items[k].Text)
-		}
-	}
-}
-//Printing i's post and new/old comments for it
-func printPostAndComments(accessToken string, wall Resp, i int, offset int, isOld bool)  {
-	if isOld {
-		fmt.Printf("\n\n[%d (Старый пост)]: %s",
-			wall.Response.Items[i].Id, wall.Response.Items[i].Text)
-	} else {
-		fmt.Printf("\n\n[%d (Новый пост)]: %s",
-			wall.Response.Items[i].Id, wall.Response.Items[i].Text)
-	}
-
-	fmt.Println("\nКомментарии: ")
-		printComments(accessToken, wall, i, wall.Response.Items[i].CommentsCount, offset)
-}
-//Getting Resp struct from api request for comments or posts
-func getJson(url string) Resp {
-	r, err := http.Get(url)
-	body, err := ioutil.ReadAll(r.Body)
+func printNewPostsAndComments(groupUrl string, wall *Resp) Resp {
+	fmt.Println("\n...")
+	newWall, err := getJson(groupUrl)
 	if err != nil {
-		fmt.Printf("Error: %v", err)
-		return Resp{}
-	}
-
-	var resp Resp
-
-	if len(body) > 0 {
-		err = json.Unmarshal(body, &resp)
-		if err != nil {
-			fmt.Printf("Error: %v", err)
-			return Resp{}
-		}
-	}
-	return resp
-}
-//Setting comments count for each post
-func setCommentsCount(accessToken string, wall Resp) Resp {
-	for i := 0; i < len(wall.Response.Items); i++ {
-		wall.Response.Items[i].CommentsCount = getCommentsCount(accessToken, wall, i)
-	}
-	return wall
-}
-//Getting group url for count posts
-func getGroupUrl(accessToken string, count int) string {
-	if len(os.Args) == 1 {
-		fmt.Println("Error: no group adress!\nPress any key...")
+		fmt.Printf("Error: %v!\nPress Enter to exit...", err)
 		fmt.Scanln()
 		os.Exit(0)
 	}
 
-	u, _ := url.Parse(os.Args[1])
-	domain := strings.Replace(u.Path, "/", "", 1)
-	groupUrl := fmt.Sprintf("https://api.vk.com/method/wall.get?domain=%s&count=%d&v=5.68&access_token=%s",
-		domain, count, accessToken)
-	return groupUrl
+	var j int
+	for j = 0; j < (newWall.Response.Count - wall.Response.Count); j++ {
+		printPostAndComments(newWall.Response.Items[j], 0, false)
+	}
+	for i := j; i < len(wall.Response.Items)-j; i++ {
+		if newWall.Response.Items[i].Comments.Count > wall.Response.Items[i-j].Comments.Count {
+			printPostAndComments(newWall.Response.Items[i], wall.Response.Items[i-j].Comments.Count, true)
+		}
+	}
+	return newWall
 }
-//Getting comments count for i's post
-func getCommentsCount (accessToken string, wall Resp, i int) int {
-	commentsUrl := fmt.Sprintf("https://api.vk.com/method/wall.getComments?owner_id=%d&post_id=%d&sort=asc" +
-		"&count=1&v=5.68&access_token=%s",
-		wall.Response.Items[i].FromId, wall.Response.Items[i].Id,
-		accessToken)
-	comm := getJson(commentsUrl)
-	time.Sleep(time.Millisecond*500)
-	return comm.Response.Count
-}
-//Initialization and printing first posts
-func initialize(accessToken string, groupUrl string) Resp {
-	wall := getJson(groupUrl)
-	wall = setCommentsCount(accessToken, wall)
 
-	for i := 0; i < len(wall.Response.Items); i++ {
-		printPostAndComments(accessToken, wall, i,0, false)
+//Printing comments for i's post (if offset>0 - printing only new comments)
+func printComments(post Item, count int, offset int) {
+	for j := 0; j < int(math.Ceil(float64(count-offset)/float64(100))); j++ {
+		comm, err := getJson(fmt.Sprintf(cURL + "&offset=%d&owner_id=%d&post_id=%d",
+			j*100+offset, post.FromId, post.Id))
+		if err != nil {
+			fmt.Printf("Error: %v!\nPress Enter to exit...", err)
+			fmt.Scanln()
+			os.Exit(0)
+		}
+
+		for _, comment := range comm.Response.Items {
+			fmt.Printf("        [%d]: %s\n", comment.Id, comment.Text)
+		}
+		time.Sleep(time.Millisecond*500)
+	}
+}
+
+//Printing i's post and new/old comments for it
+func printPostAndComments(post Item, offset int, isOld bool)  {
+	if isOld {
+		fmt.Printf("\n\n[%d (Старый пост)]: %s\n",
+			post.Id, post.Text)
+	} else {
+		fmt.Printf("\n\n[%d (Новый пост)]: %s\n",
+			post.Id, post.Text)
+	}
+	fmt.Println("Комментарии: ")
+		printComments(post, post.Comments.Count, offset)
+}
+
+//Getting Resp struct from api request for comments or posts
+func getJson(url string) (resp Resp, err error) {
+	r, err := http.Get(url)
+	if err != nil {
+		return
+	}
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return
+	}
+	if len(body) > 0 {
+		err = json.Unmarshal(body, &resp)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+//Getting group url for count posts
+func getGroupUrl(count int) (groupUrl string, err error) {
+	if len(os.Args) == 1 {
+		fmt.Print("Error: No group adress!\nPress Enter to exit...")
+		fmt.Scanln()
+		os.Exit(0)
+	}
+
+	if len(os.Args) > 2 {
+		fmt.Print("Error: Too many arguments!\nPress Enter to exit...")
+		fmt.Scanln()
+		os.Exit(0)
+	}
+
+	r, err := http.Get(os.Args[1])
+	if err != nil {
+		return
+	}
+
+	_, err = ioutil.ReadAll(r.Body)
+	if err != nil {
+		return
+	}
+
+	u, err := url.Parse(os.Args[1])
+	if err != nil {
+		return
+	}
+
+	domain := strings.Replace(u.Path, "/", "", 1)
+	groupUrl = fmt.Sprintf(gURL + "&domain=%s&count=%d", domain, count)
+
+	return
+}
+
+//Initialization and printing first posts
+func initialize(groupUrl string) Resp {
+	wall, err := getJson(groupUrl)
+	if err != nil {
+		fmt.Printf("Error: %v!\nPress Enter to exit...", err)
+		fmt.Scanln()
+		os.Exit(0)
+	}
+	for _, post := range wall.Response.Items {
+		printPostAndComments(post,0, false)
 	}
 	return wall
 }
 
 func main() {
-	accessToken := os.Getenv("VK_TOKEN")
+	groupUrl, err := getGroupUrl(10)
+	if err != nil {
+		fmt.Printf("Error: %v!\nPress Enter to exit...", err)
+		fmt.Scanln()
+		os.Exit(0)
+	}
 
-	groupUrl := getGroupUrl(accessToken, 10)
-	wall := initialize(accessToken, groupUrl)
+	wall := initialize(groupUrl)
 
 	for {
 		time.Sleep(time.Second * 15)
-		wall = printNewPostsAndComments(accessToken, groupUrl, wall)
+		printNewPostsAndComments(groupUrl, &wall)
 	}
 }
