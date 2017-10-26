@@ -1,47 +1,49 @@
 package main
 
 import (
-	"fmt"
-	"time"
 	"encoding/json"
-	"net/http"
+	"fmt"
 	"io/ioutil"
-	"os"
-	"net/url"
-	"strings"
 	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"strings"
+	"time"
 )
 
 type Resp struct {
-	Response Answer `json:"response"`
-	Error ErrorAnswer `json:"error"`
+	Response Answer      `json:"response"`
+	Error    ErrorAnswer `json:"error"`
 }
 type ErrorAnswer struct {
 	ErrorMsg string `json:"error_msg"`
 }
 type Answer struct {
-	Count int `json:"count"`
+	Count int    `json:"count"`
 	Items []Item `json:"items"`
 }
 type Item struct {
 	Comments CommentsCount `json:"comments"`
-	Id int    `json:"id"`
-	FromId int    `json:"from_id"`
-	Text string `json:"text"`
+	ID       int           `json:"id"`
+	FromId   int           `json:"from_id"`
+	Text     string        `json:"text"`
 }
 type CommentsCount struct {
 	Count int `json:"count"`
 }
 
-var accessToken = os.Getenv("VK_TOKEN")
-var vkApiURL = "https://api.vk.com/method/"
-var cURL = vkApiURL + "wall.getComments?v=5.68&count=100&access_token=" + accessToken
-var gURL = vkApiURL + "wall.get?v=5.68&access_token=" + accessToken
+var (
+	accessToken = os.Getenv("VK_TOKEN")
+	vkApiURL    = "https://api.vk.com/method/"
+	cURL        = vkApiURL + "wall.getComments?v=5.68&count=100&access_token=" + accessToken
+	gURL        = vkApiURL + "wall.get?v=5.68&access_token=" + accessToken
+)
 
-//Printing and saving new last posts and comments
-func printNewPostsAndComments(groupUrl string, wall *Resp) {
+// Printing and saving new last posts and comments.
+func printNewPostsAndComments(groupURL string, wall *Resp) {
 	fmt.Println("\n...")
-	newWall, err := getJson(groupUrl)
+	newWall, err := getJson(groupURL)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,30 +59,30 @@ func printNewPostsAndComments(groupUrl string, wall *Resp) {
 	*wall = newWall
 }
 
-//Printing comments for post (if offset > 0 - printing only new comments)
+// Printing comments for post (if offset > 0 - printing only new comments).
 func printComments(post Item, offset int) {
 	for j := 0; j <= (post.Comments.Count-offset)/100; j++ {
-		comm, err := getJson(fmt.Sprintf(cURL + "&offset=%d&owner_id=%d&post_id=%d",
-			j*100+offset, post.FromId, post.Id))
+		comm, err := getJson(fmt.Sprintf(cURL+"&offset=%d&owner_id=%d&post_id=%d",
+			j*100+offset, post.FromId, post.ID))
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		for _, comment := range comm.Response.Items {
-			fmt.Printf("        [%d]: %s\n", comment.Id, comment.Text)
+			fmt.Printf("        [%d]: %s\n", comment.ID, comment.Text)
 		}
-		time.Sleep(time.Millisecond*500)
+		time.Sleep(time.Millisecond * 500)
 	}
 }
 
-//Printing new/old post and only new comments for it
-func printPostAndComments(post Item, offset int, postState string)  {
-	fmt.Printf("\n\n[%d (%s)]: %s\n", post.Id, postState,  post.Text)
+// Printing new/old post and only new comments for it.
+func printPostAndComments(post Item, offset int, postState string) {
+	fmt.Printf("\n\n[%d (%s)]: %s\n", post.ID, postState, post.Text)
 	fmt.Println("Комментарии: ")
 	printComments(post, offset)
 }
 
-//Getting Resp struct from api request for comments or posts
+// Getting Resp struct from api request for comments or posts.
 func getJson(url string) (resp Resp, err error) {
 	r, err := http.Get(url)
 	if err != nil {
@@ -104,8 +106,8 @@ func getJson(url string) (resp Resp, err error) {
 	return
 }
 
-//Getting group url for count posts
-func getGroupUrl(count int) (groupUrl string, err error) {
+// Getting group url for count posts.
+func getGroupURL(count int) (groupURL string, err error) {
 	if len(os.Args) == 1 {
 		log.Fatal("Error: No group adress!")
 	}
@@ -130,33 +132,33 @@ func getGroupUrl(count int) (groupUrl string, err error) {
 	}
 
 	domain := strings.Replace(u.Path, "/", "", 1)
-	groupUrl = fmt.Sprintf(gURL + "&domain=%s&count=%d", domain, count)
+	groupURL = fmt.Sprintf(gURL+"&domain=%s&count=%d", domain, count)
 	return
 }
 
-//Initialization and printing first posts
-func initialize(groupUrl string) (wall Resp) {
-	wall, err := getJson(groupUrl)
+// Initialization and printing first posts.
+func initialize(groupURL string) (wall Resp) {
+	wall, err := getJson(groupURL)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, post := range wall.Response.Items {
-		printPostAndComments(post,0, "Новый пост")
+		printPostAndComments(post, 0, "Новый пост")
 	}
 	return
 }
 
 func main() {
-	groupUrl, err := getGroupUrl(10)
+	groupURL, err := getGroupURL(10)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	wall := initialize(groupUrl)
+	wall := initialize(groupURL)
 
 	for {
 		time.Sleep(time.Second * 15)
-		printNewPostsAndComments(groupUrl, &wall)
+		printNewPostsAndComments(groupURL, &wall)
 	}
 }
